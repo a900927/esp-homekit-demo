@@ -4,13 +4,14 @@
 * NOTE:
 *    1) the ws2812_i2s library uses hardware I2S so output pin is GPIO3 and cannot be changed.
 *    2) on some ESP8266 such as the Wemos D1 mini, GPIO3 is the same pin used for serial comms (RX pin).
-*	 3) you can still print stuff to serial but transmiting data to wemos will interfere on the leds output
+*    3) you can still print stuff to serial but transmiting data to wemos will interfere on the leds output
 * 
 * Debugging printf statements are disabled below because of note (2) - you can uncomment
 * them if your hardware supports serial comms that do not conflict with I2S on GPIO3.
 *
-* Contributed March 2018 by https://github.com/Dave1001
+* Contributed April 2018 by https://github.com/PCSaito
 */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <espressif/esp_wifi.h>
@@ -31,6 +32,8 @@
 #define LED_COUNT 43            // this is the number of WS2812B leds on the strip
 #define LED_INBUILT_GPIO 2      // this is the onboard LED used to show on/off only
 
+#define ENABLE_TIMER 
+
 // Global variables
 float led_hue = 0;              // hue is scaled 0 to 360
 float led_saturation = 100;      // saturation is scaled 0 to 100
@@ -42,6 +45,9 @@ float fx_hue = 64;              // hue is scaled 0 to 360
 float fx_saturation = 50;      // saturation is scaled 0 to 100
 float fx_brightness = 50;     // brightness is scaled 0 to 100
 bool fx_on = true;
+
+bool timer_on = false;
+uint8_t timer_brightness = 60;     // brightness is scaled 0 to 100
 
 //http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
 static void hsi2rgb(float h, float s, float i, ws2812_pixel_t* rgb) {
@@ -93,9 +99,9 @@ static void wifi_init() {
 
 
 void led_identify_task(void *_args) {
-	// initialise the onboard led as a secondary indicator (handy for testing)
-	gpio_enable(LED_INBUILT_GPIO, GPIO_OUTPUT);
-	
+    // initialise the onboard led as a secondary indicator (handy for testing)
+    gpio_enable(LED_INBUILT_GPIO, GPIO_OUTPUT);
+    
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
             gpio_write(LED_INBUILT_GPIO, (int)led_on_value);
@@ -116,6 +122,7 @@ void led_identify(homekit_value_t _value) {
     xTaskCreate(led_identify_task, "LED identify", 128, NULL, 2, NULL);
 }
 
+//Main
 homekit_value_t led_on_get() {
     return HOMEKIT_BOOL(led_on);
 }
@@ -127,13 +134,13 @@ void led_on_set(homekit_value_t value) {
     }
 
     led_on = value.bool_value;
-	
-	if (led_on) {
-		WS2812FX_setBrightness((uint8_t)floor(led_brightness*2.55));
-		
-	} else {
-		WS2812FX_setBrightness(0);
-	}
+    
+    if (led_on) {
+        WS2812FX_setBrightness((uint8_t)floor(led_brightness*2.55));
+        
+    } else {
+        WS2812FX_setBrightness(0);
+    }
 }
 
 homekit_value_t led_brightness_get() {
@@ -146,8 +153,8 @@ void led_brightness_set(homekit_value_t value) {
         return;
     }
     led_brightness = value.int_value;
-	
-	WS2812FX_setBrightness((uint8_t)floor(led_brightness*2.55));
+    
+    WS2812FX_setBrightness((uint8_t)floor(led_brightness*2.55));
 }
 
 homekit_value_t led_hue_get() {
@@ -161,10 +168,10 @@ void led_hue_set(homekit_value_t value) {
     }
     led_hue = value.float_value;
     
-	ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+    ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
     hsi2rgb(led_hue, led_saturation, 100, &rgb);
-	
-	WS2812FX_setColor(rgb.red, rgb.green, rgb.blue);
+    
+    WS2812FX_setColor(rgb.red, rgb.green, rgb.blue);
 }
 
 homekit_value_t led_saturation_get() {
@@ -177,13 +184,14 @@ void led_saturation_set(homekit_value_t value) {
         return;
     }
     led_saturation = value.float_value;
-	
-	ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+    
+    ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
     hsi2rgb(led_hue, led_saturation, 100, &rgb);
-	
-	WS2812FX_setColor(rgb.red, rgb.green, rgb.blue);
+    
+    WS2812FX_setColor(rgb.red, rgb.green, rgb.blue);
 }
 
+//FX
 homekit_value_t fx_on_get() {
     return HOMEKIT_BOOL(fx_on);
 }
@@ -194,12 +202,12 @@ void fx_on_set(homekit_value_t value) {
         return;
     }
     fx_on = value.bool_value;
-	
-	if (fx_on) {
-		WS2812FX_setMode360(fx_hue);
-	} else {
-		WS2812FX_setMode360(0);
-	}
+    
+    if (fx_on) {
+        WS2812FX_setMode360(fx_hue);
+    } else {
+        WS2812FX_setMode360(0);
+    }
 }
 
 homekit_value_t fx_brightness_get() {
@@ -212,16 +220,16 @@ void fx_brightness_set(homekit_value_t value) {
         return;
     }
     fx_brightness = value.int_value;
-	
-	if (fx_brightness > 50) {
-		uint8_t fx_speed = fx_brightness - 50;
-		WS2812FX_setSpeed(fx_speed*5.1);
-		WS2812FX_setInverted(true);
-	} else {
-		uint8_t fx_speed = abs(fx_brightness - 51);
-		WS2812FX_setSpeed(fx_speed*5.1);
-		WS2812FX_setInverted(false);
-	}
+    
+    if (fx_brightness > 50) {
+        uint8_t fx_speed = fx_brightness - 50;
+        WS2812FX_setSpeed(fx_speed*5.1);
+        WS2812FX_setInverted(true);
+    } else {
+        uint8_t fx_speed = abs(fx_brightness - 51);
+        WS2812FX_setSpeed(fx_speed*5.1);
+        WS2812FX_setInverted(false);
+    }
 }
 
 homekit_value_t fx_hue_get() {
@@ -234,8 +242,8 @@ void fx_hue_set(homekit_value_t value) {
         return;
     }
     fx_hue = value.float_value;
-	
-	WS2812FX_setMode360(fx_hue);
+    
+    WS2812FX_setMode360(fx_hue);
 }
 
 homekit_value_t fx_saturation_get() {
@@ -247,8 +255,94 @@ void fx_saturation_set(homekit_value_t value) {
         // printf("Invalid hue-value format: %d\n", value.format);
         return;
     }
-    fx_saturation = value.float_value;	
+    fx_saturation = value.float_value;    
 }
+
+#ifdef ENABLE_TIMER
+void start_timer();
+
+homekit_value_t timer_on_get() {
+    return HOMEKIT_BOOL(timer_on);
+}
+
+void timer_on_set(homekit_value_t value) {
+    if (value.format != homekit_format_bool) {
+        // printf("Invalid on-value format: %d\n", value.format);
+        return;
+    }
+    bool new_timer_on = value.bool_value;
+    
+    if (new_timer_on && new_timer_on != timer_on) {
+        start_timer();
+    }
+    
+    timer_on = new_timer_on;
+}
+
+homekit_value_t timer_brightness_get() {
+    return HOMEKIT_INT(timer_brightness);
+}
+
+void timer_brightness_set(homekit_value_t value) {
+    if (value.format != homekit_format_int) {
+        // printf("Invalid brightness-value format: %d\n", value.format);
+        return;
+    }
+    timer_brightness = value.int_value;
+}
+
+homekit_characteristic_t timer_on_characteristic = HOMEKIT_CHARACTERISTIC_(
+    ON, false, 
+    .getter = timer_on_get,
+    .setter = timer_on_set
+);
+
+homekit_characteristic_t timer_brightness_characteristic = HOMEKIT_CHARACTERISTIC_(
+    BRIGHTNESS, 60, 
+    .getter = timer_brightness_get,
+    .setter = timer_brightness_set
+);
+
+//Timer
+TaskHandle_t tHandle = NULL;
+
+void stop_timer() {
+    if (tHandle != NULL) {
+        vTaskDelete(tHandle);
+        tHandle = NULL;
+    }
+}
+
+void timer_task(void *_args) {
+    const TickType_t xPeriod = pdMS_TO_TICKS(60 *1000);
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    while (timer_brightness > 0) {
+        timer_brightness--;
+        switch (timer_brightness) {
+            case 0:
+                led_on = false;
+                timer_on = false;
+                break;
+            case 1:
+            case 2:
+            case 3:
+                led_brightness = led_brightness / 2;
+                break;   
+        }
+        
+        homekit_characteristic_notify(&timer_on_characteristic, timer_on_characteristic.value);
+        homekit_characteristic_notify(&timer_brightness_characteristic, timer_brightness_characteristic.value);
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+    stop_timer();
+}
+
+void start_timer() {
+    stop_timer();
+    xTaskCreate(timer_task, "turnOffTimer", 128, NULL, 2, &tHandle);
+}
+#endif
 
 homekit_characteristic_t name = HOMEKIT_CHARACTERISTIC_(NAME, "Chihiro");
 
@@ -311,6 +405,14 @@ homekit_accessory_t *accessories[] = {
             ),
             NULL
         }),
+#ifdef ENABLE_TIMER
+        HOMEKIT_SERVICE(LIGHTBULB, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
+            HOMEKIT_CHARACTERISTIC(NAME, "Chihiro Timer"),
+            &timer_on_characteristic,
+            &timer_brightness_characteristic,
+            NULL
+        }),
+#endif    
         NULL
     }),
     NULL
@@ -337,6 +439,6 @@ void user_init(void) {
     wifi_init();
     WS2812FX_init(LED_COUNT);
     homekit_server_init(&config);
-	
-	led_identify(HOMEKIT_INT(led_brightness));
+    
+    led_identify(HOMEKIT_INT(led_brightness));
 }
